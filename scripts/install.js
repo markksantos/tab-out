@@ -54,10 +54,28 @@ function ensureDir(dirPath) {
 
 function installMacOS() {
   const plistDir  = path.join(os.homedir(), 'Library', 'LaunchAgents');
-  const plistFile = path.join(plistDir, 'com.tab-out.plist');
-  const label     = 'com.tab-out';
+  const plistFile = path.join(plistDir, 'com.tab-out.server.plist');
+  const label     = 'com.tab-out.server';
 
   ensureDir(plistDir);
+
+  // Run the server via a self-owned copy of the node binary named
+  // "tab-out-server". Two reasons:
+  //   1. A node-version-manager wipe/relocation can't break boot.
+  //   2. macOS Login Items shows the item as "tab-out-server" instead of an
+  //      anonymous "node", so it doesn't get toggled off by accident — a
+  //      BTM-disallowed item silently never starts at login even though
+  //      launchctl reports it enabled.
+  const runtimeDir = path.join(PROJECT_DIR, '.runtime');
+  const runtimeBin = path.join(runtimeDir, 'tab-out-server');
+  ensureDir(runtimeDir);
+  if (!fs.existsSync(runtimeBin)) {
+    fs.copyFileSync(NODE_BIN, runtimeBin);
+    fs.chmodSync(runtimeBin, 0o755);
+    console.log(`  Copied node → ${runtimeBin}`);
+  } else {
+    console.log(`  Exists:  ${runtimeBin}`);
+  }
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -68,7 +86,7 @@ function installMacOS() {
   <string>${label}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${NODE_BIN}</string>
+    <string>${runtimeBin}</string>
     <string>${SERVER_ENTRY}</string>
   </array>
   <key>KeepAlive</key>
@@ -87,21 +105,27 @@ function installMacOS() {
   fs.writeFileSync(plistFile, plist);
   console.log(`  Wrote Launch Agent: ${plistFile}`);
 
-  // Also unload old com.mission-control plist if it exists (migration)
-  const oldPlist = path.join(plistDir, 'com.mission-control.plist');
-  if (fs.existsSync(oldPlist)) {
-    try { execSync(`launchctl unload "${oldPlist}" 2>/dev/null`, { stdio: 'pipe' }); } catch {}
-    fs.unlinkSync(oldPlist);
-    console.log('  Removed old com.mission-control Launch Agent');
+  // Remove superseded Launch Agents (migration)
+  const uid = process.getuid();
+  for (const oldName of ['com.mission-control.plist', 'com.tab-out.plist']) {
+    const oldPlist = path.join(plistDir, oldName);
+    if (fs.existsSync(oldPlist)) {
+      try { execSync(`launchctl bootout gui/${uid} "${oldPlist}" 2>/dev/null`, { stdio: 'pipe' }); } catch {}
+      fs.unlinkSync(oldPlist);
+      console.log(`  Removed old Launch Agent: ${oldName}`);
+    }
   }
 
+  // Modern bootstrap — the legacy `launchctl load -w` can leave the agent
+  // enabled but never actually loaded into the gui domain.
   try {
-    try { execSync(`launchctl unload "${plistFile}" 2>/dev/null`, { stdio: 'pipe' }); } catch {}
-    execSync(`launchctl load -w "${plistFile}"`, { stdio: 'inherit' });
-    console.log('  Launch Agent loaded — Tab Out will start on login');
+    try { execSync(`launchctl bootout gui/${uid}/${label} 2>/dev/null`, { stdio: 'pipe' }); } catch {}
+    execSync(`launchctl enable gui/${uid}/${label}`, { stdio: 'pipe' });
+    execSync(`launchctl bootstrap gui/${uid} "${plistFile}"`, { stdio: 'inherit' });
+    console.log('  Launch Agent bootstrapped — Tab Out will start on login');
   } catch (err) {
-    console.warn(`  Warning: launchctl load failed: ${err.message}`);
-    console.warn(`  Run manually: launchctl load -w "${plistFile}"`);
+    console.warn(`  Warning: launchctl bootstrap failed: ${err.message}`);
+    console.warn(`  Run manually: launchctl bootstrap gui/${uid} "${plistFile}"`);
   }
 }
 
