@@ -1109,6 +1109,22 @@ function getTabFavicon(tab) {
   } catch { return ''; }
 }
 
+// Chrome tab-group colors → CSS values, matching Chrome's own palette.
+const GROUP_COLORS = {
+  grey: '#5f6368', blue: '#1a73e8', red: '#d93025', yellow: '#f9ab00',
+  green: '#188038', pink: '#d01884', purple: '#9334e6', cyan: '#007b83',
+  orange: '#fa903e',
+};
+
+// A small colored pill showing which Chrome tab group a tab belongs to.
+// Untitled groups still get a colored dot so the grouping is visible.
+function groupTag(tab) {
+  if (tab.groupId == null || tab.groupColor == null) return '';
+  const color = GROUP_COLORS[tab.groupColor] || GROUP_COLORS.grey;
+  const label = tab.groupTitle ? esc(tab.groupTitle) : '';
+  return `<span class="chip-group" style="--group-color:${color}" title="${label || 'Tab group'}">${label}</span>`;
+}
+
 function friendlyDomain(hostname) {
   if (!hostname) return '';
 
@@ -1669,7 +1685,7 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${esc(faviconUrl)}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}
+      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}${groupTag(tab)}
       <div class="chip-actions">
         <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
@@ -1769,7 +1785,7 @@ function renderDomainCard(group, groupIndex) {
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${esc(faviconUrl)}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}
+      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}${groupTag(tab)}
       <div class="chip-actions">
         <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
@@ -2392,7 +2408,7 @@ function computeMasonrySignature(groups) {
   const noteKeys = Object.keys(tabNotes || {}).sort().join(',');
   const parts = groups.map(g =>
     g.domain + ':' + g.tabs.map(t =>
-      `${t.url}|${t.title || ''}|${t.favIconUrl || ''}|${isStaleTab(t) ? 1 : 0}`
+      `${t.url}|${t.title || ''}|${t.favIconUrl || ''}|${isStaleTab(t) ? 1 : 0}|${t.groupId ?? ''}:${t.groupTitle || ''}:${t.groupColor || ''}`
     ).join('~')
   );
   return parts.join('§') + '§§' + collapsed + '§§' + noteKeys;
@@ -3122,6 +3138,61 @@ function initSettingsPanel() {
   if (bgToggle) {
     bgToggle.addEventListener('change', () => {
       localStorage.setItem('tabout-open-in-background', bgToggle.checked ? 'true' : 'false');
+    });
+  }
+
+  // Backup: export / import the whole dataset as JSON
+  const exportBtn = document.getElementById('settingsExportBtn');
+  const importBtn = document.getElementById('settingsImportBtn');
+  const importFile = document.getElementById('settingsImportFile');
+  const backupStatus = document.getElementById('settingsBackupStatus');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/export');
+        if (!res.ok) throw new Error('export failed');
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `tab-out-backup-${stamp}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        if (backupStatus) backupStatus.textContent = 'Backup downloaded.';
+      } catch {
+        if (backupStatus) backupStatus.textContent = 'Export failed.';
+      }
+    });
+  }
+  if (importBtn && importFile) {
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', async () => {
+      const file = importFile.files && importFile.files[0];
+      if (!file) return;
+      if (!confirm('Importing replaces all current sessions, notes, saved-for-later, snoozes, and stats with the backup. Continue?')) {
+        importFile.value = '';
+        return;
+      }
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const res = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.error || 'import failed');
+        if (backupStatus) backupStatus.textContent = 'Backup restored. Reloading…';
+        await loadAppConfig();
+        setTimeout(() => location.reload(), 800);
+      } catch (err) {
+        if (backupStatus) backupStatus.textContent = 'Import failed: ' + (err.message || 'invalid file');
+      } finally {
+        importFile.value = '';
+      }
     });
   }
 
@@ -4494,6 +4565,30 @@ function getPaletteCommands() {
   return cmds;
 }
 
+// Fuzzy subsequence scorer. Returns a score (higher = better) or -1 if `q`
+// isn't a subsequence of `text`. Rewards consecutive runs, matches at word
+// boundaries, and matches near the start — so "gh pr" ranks "GitHub · Pull
+// Request" above an incidental mid-word match.
+function fuzzyScore(text, q) {
+  if (!q) return 0;
+  text = (text || '').toLowerCase();
+  let ti = 0, score = 0, run = 0;
+  for (let qi = 0; qi < q.length; qi++) {
+    const c = q[qi];
+    if (c === ' ') { run = 0; continue; } // spaces just separate, don't need to match
+    const found = text.indexOf(c, ti);
+    if (found === -1) return -1;
+    let bonus = 1;
+    if (found === ti) { run++; bonus += run * 2; } else { run = 1; }
+    const prev = found > 0 ? text[found - 1] : ' ';
+    if (/[\s\/\-_.·—|:]/.test(prev)) bonus += 4; // word-boundary start
+    if (found < 12) bonus += 1;                  // near the front
+    score += bonus;
+    ti = found + 1;
+  }
+  return score;
+}
+
 function filterPalette(query) {
   const raw = query || '';
   const isCmd = raw.startsWith('>');
@@ -4501,17 +4596,19 @@ function filterPalette(query) {
   if (isCmd) {
     const cmds = getPaletteCommands();
     palette.filtered = (q
-      ? cmds.filter(c => c.label.toLowerCase().includes(q))
+      ? cmds.map(c => ({ c, s: fuzzyScore(c.label, q) }))
+          .filter(x => x.s >= 0)
+          .sort((a, b) => b.s - a.s)
+          .map(x => x.c)
       : cmds
     ).slice(0, 50).map(c => ({ kind: 'command', label: c.label, run: c.run }));
   } else {
     const tabs = getRealTabs();
     const matched = q
-      ? tabs.filter(t => {
-          const title = (t.title || '').toLowerCase();
-          const url = (t.url || '').toLowerCase();
-          return title.includes(q) || url.includes(q);
-        })
+      ? tabs.map(t => ({ t, s: Math.max(fuzzyScore(t.title || '', q), fuzzyScore(t.url || '', q)) }))
+          .filter(x => x.s >= 0)
+          .sort((a, b) => b.s - a.s)
+          .map(x => x.t)
       : tabs;
     palette.filtered = matched.slice(0, 50).map(t => ({ kind: 'tab', tab: t }));
   }

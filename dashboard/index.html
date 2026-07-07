@@ -345,6 +345,13 @@
                 <circle cx="12" cy="7" r="4"/>
               </svg>Personal
             </button>
+            <button class="settings-nav-item" data-tab="backup">
+              <svg class="settings-nav-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" x2="12" y1="15" y2="3"/>
+              </svg>Backup
+            </button>
           </nav>
           <div class="settings-body">
 
@@ -550,6 +557,18 @@
                 <input type="url" id="settingsNewLinkUrl" class="settings-input settings-input-inline" placeholder="https://example.com">
                 <button class="settings-add-btn" id="settingsAddLink" title="Add link">+</button>
               </div>
+            </div>
+
+            <!-- ============ BACKUP ============ -->
+            <div class="settings-group" data-tab="backup">
+              <label class="settings-label">Backup &amp; restore</label>
+              <p class="settings-hint">Export everything — sessions, saved-for-later, notes, snoozes, activity stats, and settings — to a single JSON file. Import it on another machine or after a reset.</p>
+              <div class="settings-backup-actions">
+                <button class="settings-btn" id="settingsExportBtn">Export backup</button>
+                <button class="settings-btn" id="settingsImportBtn">Import backup…</button>
+                <input type="file" id="settingsImportFile" accept="application/json,.json" style="display:none">
+              </div>
+              <p class="settings-hint" id="settingsBackupStatus" style="margin-top:10px"></p>
             </div>
 
           </div>

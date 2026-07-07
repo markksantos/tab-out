@@ -139,19 +139,36 @@ async function handleGetTabs() {
   const extensionId = chrome.runtime.id;
   const newtabUrl = `chrome-extension://${extensionId}/newtab.html`;
 
-  const simpleTabs = tabs.map(tab => ({
-    id: tab.id,
-    url: tab.url,
-    title: tab.title,
-    favIconUrl: tab.favIconUrl || null,
-    windowId: tab.windowId,
-    active: tab.active,
-    // tab.lastAccessed is a unix-ms timestamp (Chrome 121+). Undefined on
-    // older Chrome — the dashboard treats missing values as "fresh" so it
-    // never falsely flags tabs as stale.
-    lastAccessed: typeof tab.lastAccessed === 'number' ? tab.lastAccessed : null,
-    isTabOut: tab.url === newtabUrl || tab.url === 'chrome://newtab/',
-  }));
+  // Resolve Chrome tab-group metadata (name + color) once, keyed by groupId,
+  // so the dashboard can label tabs by the groups the user already made.
+  const groups = {};
+  try {
+    if (chrome.tabGroups && chrome.tabGroups.query) {
+      const list = await chrome.tabGroups.query({});
+      for (const g of list) groups[g.id] = { title: g.title || '', color: g.color || 'grey' };
+    }
+  } catch { /* tabGroups unavailable — degrade to no groups */ }
+
+  const NO_GROUP = -1; // chrome.tabGroups.TAB_GROUP_ID_NONE
+  const simpleTabs = tabs.map(tab => {
+    const g = (typeof tab.groupId === 'number' && tab.groupId !== NO_GROUP) ? groups[tab.groupId] : null;
+    return {
+      id: tab.id,
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl || null,
+      windowId: tab.windowId,
+      active: tab.active,
+      // tab.lastAccessed is a unix-ms timestamp (Chrome 121+). Undefined on
+      // older Chrome — the dashboard treats missing values as "fresh" so it
+      // never falsely flags tabs as stale.
+      lastAccessed: typeof tab.lastAccessed === 'number' ? tab.lastAccessed : null,
+      isTabOut: tab.url === newtabUrl || tab.url === 'chrome://newtab/',
+      groupId: (typeof tab.groupId === 'number') ? tab.groupId : null,
+      groupTitle: g ? g.title : null,
+      groupColor: g ? g.color : null,
+    };
+  });
   return { tabs: simpleTabs };
 }
 

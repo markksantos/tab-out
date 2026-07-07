@@ -703,12 +703,100 @@ router.patch('/config', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BACKUP — export / import the whole SQLite dataset as JSON.
+//
+// Nothing else backs up ~/.mission-control. These endpoints let the settings
+// panel download every session, note, saved-for-later, snooze, and daily stat
+// as one file, and restore it on a new machine.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BACKUP_TABLES = [
+  'deferred_tabs', 'sessions', 'tab_notes', 'snoozed_tabs', 'daily_stats', 'meta',
+];
+
+router.get('/export', (req, res) => {
+  try {
+    const data = {};
+    for (const t of BACKUP_TABLES) {
+      data[t] = db.prepare(`SELECT * FROM ${t}`).all();
+    }
+    res.json({
+      app: 'tab-out',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      config: getExportableConfig(),
+      tables: data,
+    });
+  } catch (err) {
+    console.error('[routes] GET /export failed:', err.message);
+    res.status(500).json({ error: 'Failed to export' });
+  }
+});
+
+router.post('/import', (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.app !== 'tab-out' || !body.tables) {
+      return res.status(400).json({ error: 'Not a Tab Out backup file' });
+    }
+    const tables = body.tables;
+    const counts = {};
+
+    // Restore in one transaction: wipe each known table, then re-insert its
+    // rows column-for-column. Unknown tables/columns are ignored so a backup
+    // from a newer schema still imports what it can.
+    const restore = db.transaction(() => {
+      for (const t of BACKUP_TABLES) {
+        const rows = Array.isArray(tables[t]) ? tables[t] : null;
+        if (!rows) continue;
+        db.prepare(`DELETE FROM ${t}`).run();
+        counts[t] = 0;
+        if (rows.length === 0) continue;
+        const cols = db.prepare(`SELECT name FROM pragma_table_info(?)`).all(t).map(r => r.name);
+        for (const row of rows) {
+          const present = cols.filter(c => Object.prototype.hasOwnProperty.call(row, c));
+          if (present.length === 0) continue;
+          const sql = `INSERT INTO ${t} (${present.join(',')}) VALUES (${present.map(c => '@' + c).join(',')})`;
+          const params = {};
+          for (const c of present) params[c] = row[c];
+          db.prepare(sql).run(params);
+          counts[t]++;
+        }
+      }
+    });
+    restore();
+
+    // Restore config too, if present (validated by config.save).
+    if (body.config && typeof body.config === 'object') {
+      try { config.save(body.config); } catch (e) { /* skip invalid keys */ }
+    }
+
+    res.json({ success: true, imported: counts });
+  } catch (err) {
+    console.error('[routes] POST /import failed:', err.message);
+    res.status(500).json({ error: 'Failed to import: ' + err.message });
+  }
+});
+
+// Snapshot of user-facing config keys (everything except the internal
+// path/function fields config attaches at runtime).
+function getExportableConfig() {
+  const skip = new Set(['CONFIG_DIR', 'CONFIG_FILE', 'DEFAULTS', 'save', 'port', 'extensionOrigin']);
+  const out = {};
+  for (const [k, v] of Object.entries(config)) {
+    if (skip.has(k) || typeof v === 'function') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 //
 // The main Express app (index.js) does:
 //   const routes = require('./routes');
 //   app.use('/api', routes);
 //
-// That mounts all of our router.get('/missions') etc. at /api/missions.
+// That mounts all of our router.get('/sessions') etc. at /api/sessions.
 // ─────────────────────────────────────────────────────────────────────────────
 module.exports = router;

@@ -1562,7 +1562,8 @@ body.dark-mode .settings-nav {
 .settings-body[data-active-tab="tabs"] .settings-group[data-tab="tabs"],
 .settings-body[data-active-tab="heatmap"] .settings-group[data-tab="heatmap"],
 .settings-body[data-active-tab="time"] .settings-group[data-tab="time"],
-.settings-body[data-active-tab="personal"] .settings-group[data-tab="personal"] {
+.settings-body[data-active-tab="personal"] .settings-group[data-tab="personal"],
+.settings-body[data-active-tab="backup"] .settings-group[data-tab="backup"] {
   display: flex;
 }
 
@@ -1753,6 +1754,27 @@ body.dark-mode .settings-nav {
 }
 
 .settings-add-btn:hover {
+  opacity: 0.85;
+}
+
+/* ---- Settings: backup buttons ---- */
+.settings-backup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settings-btn {
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.settings-btn:hover {
   opacity: 0.85;
 }
 
@@ -2930,6 +2952,35 @@ body.dark-mode .heatmap-cell-l4 { background: var(--accent-sage); }
 .page-chip.chip-stale .chip-age {
   color: var(--accent-amber);
   opacity: 1;
+}
+
+/* Chrome tab-group pill: a colored dot + optional group name, so the
+   dashboard reflects the groups the user already made in Chrome. */
+.chip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 1px 7px 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--group-color);
+  background: color-mix(in srgb, var(--group-color) 12%, transparent);
+  border-radius: 999px;
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chip-group::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--group-color);
+  flex-shrink: 0;
 }
 
 /* ---- Stale tab indicator (chip dot for tabs untouched 7+ days) ---- */
