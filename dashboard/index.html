@@ -704,7 +704,14 @@
   </div>
 
   <!-- Main dashboard logic — loads last so the DOM is ready -->
-  <script src="app.js"></script>
+  <!-- app.js was split into ordered parts sharing one global scope.
+       Load order matters: core defines helpers + state the later parts use. -->
+  <script src="js/app-core.js"></script>
+  <script src="js/app-render.js"></script>
+  <script src="js/app-dynamic.js"></script>
+  <script src="js/app-events.js"></script>
+  <script src="js/app-features.js"></script>
+  <script src="js/app-boot.js"></script>
 </body>
 
 </html>

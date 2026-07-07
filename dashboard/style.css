@@ -221,6 +221,19 @@ header {
   border-radius: 2px;
 }
 
+/* Last-resort favicon fallback: a letter tile when every icon service fails. */
+.quick-link-monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--paper);
+  background: var(--ink);
+  border-radius: 4px;
+  line-height: 1;
+}
+
 .quick-link[draggable="true"] {
   cursor: grab;
 }
