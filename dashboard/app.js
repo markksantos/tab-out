@@ -1095,11 +1095,17 @@ const FRIENDLY_DOMAINS = {
  * 3. Fallback: strip "www.", strip TLD, capitalize
  *    (e.g. "minttr.com" → "Minttr", "blog.example.co.uk" → "Blog Example")
  */
+// Google's s2 service tops out around 32px and returns fuzzy bitmaps;
+// DuckDuckGo's ip3 service serves the site's real 48–64px icon and renders
+// crisply on Retina. Prefer Chrome's own favicon when we have it.
+function faviconForDomain(domain) {
+  return domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : '';
+}
+
 function getTabFavicon(tab) {
   if (tab.favIconUrl) return tab.favIconUrl;
   try {
-    const domain = new URL(tab.url).hostname;
-    return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    return faviconForDomain(new URL(tab.url).hostname);
   } catch { return ''; }
 }
 
@@ -2107,9 +2113,10 @@ async function renderDeferredColumn() {
  * Each item has: checkbox, title (clickable link), domain, time ago, dismiss X.
  */
 function renderDeferredItem(item) {
+  let host = '';
   let domain = '';
-  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch { }
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+  try { host = new URL(item.url).hostname; domain = host.replace(/^www\./, ''); } catch { }
+  const faviconUrl = item.favicon_url || faviconForDomain(host);
   const ago = timeAgo(item.deferred_at);
 
   return `
@@ -2375,6 +2382,22 @@ async function refreshQuote() {
  * Safe to call repeatedly — no event listeners are attached,
  * no intervals are created. Used by the 30-second auto-refresh.
  */
+// Signature of everything that affects the rendered domain cards, so the
+// 30s auto-refresh can skip a full masonry rebuild when nothing changed.
+// Covers grouping/order, per-tab identity + staleness + favicon, which tabs
+// have notes, and which cards are collapsed.
+let _lastMasonrySig = '';
+function computeMasonrySignature(groups) {
+  const collapsed = [...getCollapsedSet()].sort().join(',');
+  const noteKeys = Object.keys(tabNotes || {}).sort().join(',');
+  const parts = groups.map(g =>
+    g.domain + ':' + g.tabs.map(t =>
+      `${t.url}|${t.title || ''}|${t.favIconUrl || ''}|${isStaleTab(t) ? 1 : 0}`
+    ).join('~')
+  );
+  return parts.join('§') + '§§' + collapsed + '§§' + noteKeys;
+}
+
 async function refreshDynamicContent() {
   // ── Refresh quote ─────────────────────────────────────────────────────────
   refreshQuote();
@@ -2444,10 +2467,19 @@ async function refreshDynamicContent() {
     // the container's real width — when display:none, clientWidth is 0 and
     // the layout collapses to a single column.
     openTabsSection.style.display = 'block';
-    layoutMissionsMasonry(openTabsMissionsEl, domainGroups);
+    // Rebuilding the masonry blows away hover/scroll state and re-fetches
+    // every favicon. On the 30s auto-refresh the tab set is usually
+    // identical, so skip the rebuild unless something that affects the
+    // rendered cards actually changed.
+    const sig = computeMasonrySignature(domainGroups);
+    if (sig !== _lastMasonrySig || openTabsMissionsEl.childElementCount === 0) {
+      _lastMasonrySig = sig;
+      layoutMissionsMasonry(openTabsMissionsEl, domainGroups);
+    }
     applyOpenTabsFilter();
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
+    _lastMasonrySig = '';
   }
 
   // ── Footer stats ──────────────────────────────────────────────────────────
@@ -3153,7 +3185,7 @@ function initSettingsPanel() {
       if (!url) return;
       let host = '';
       try { host = new URL(url).hostname; } catch { }
-      const icon = host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : '';
+      const icon = faviconForDomain(host);
       const current = [...getQuickLinks()];
       current.push({ url, title: title || host || url, icon: icon || '' });
       await saveAppConfig({ quickLinks: current });
