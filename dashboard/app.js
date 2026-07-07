@@ -232,7 +232,7 @@ const ICON_RESET = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="1
 const DEFAULT_QUICK_LINKS = [
   { url: 'https://www.google.com', title: 'Google', icon: 'https://www.google.com/favicon.ico' },
   { url: 'https://mail.google.com/chat/', title: 'Google Chat', icon: 'https://www.google.com/s2/favicons?domain=chat.google.com&sz=32' },
-  { url: 'https://web.whatsapp.com', title: 'WhatsApp', icon: 'https://static.whatsapp.net/rsrc.php/v3/yP/r/rYZqPCBaG70.png' },
+  { url: 'https://web.whatsapp.com', title: 'WhatsApp', icon: 'https://web.whatsapp.com/favicon.ico' },
   { url: 'https://www.fiverr.com/seller_dashboard', title: 'Fiverr', icon: 'https://www.fiverr.com/favicon.ico' },
   { url: 'https://docs.google.com/spreadsheets/d/14JdVdf0upNUuH7U3YjANOgfE29zsTCarbCCaPNrkoHc/edit?pli=1&gid=1805970936#gid=1805970936', title: 'Master Sheet', icon: 'https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico' },
   { url: 'https://app.rocketmoney.com/', title: 'Rocket Money', icon: 'https://www.google.com/s2/favicons?domain=rocketmoney.com&sz=32' },
