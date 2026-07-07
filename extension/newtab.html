@@ -90,12 +90,14 @@
     <h1>Tab Out is not running</h1>
     <p>
       The dashboard server isn't detected at <code>localhost:3456</code>.<br />
-      To start it, open your terminal and run:
+      It normally starts automatically at login — give it a few seconds.
     </p>
-    <p><code>cd tab-out &amp;&amp; npm start</code></p>
     <p>
-      Once the server is running, open a new tab and Tab Out will appear.
+      If it stays down, start it manually:
+      <code>launchctl kickstart gui/$UID/com.tab-out.server</code><br />
+      or run <code>npm start</code> in the tab-out folder.
     </p>
+    <p id="fallback-status">Retrying automatically&hellip;</p>
   </div>
 
   <!-- Bridge script: connects this page to the Chrome tabs API -->

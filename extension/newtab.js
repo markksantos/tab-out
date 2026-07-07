@@ -39,9 +39,27 @@ fetch('http://localhost:3456', { mode: 'no-cors' })
 // (e.g. the server starts then immediately crashes).
 frame.addEventListener('error', showFallback);
 
+// While the fallback is visible, keep probing the server every 3 seconds and
+// swap the dashboard back in the moment it answers — a slow launchd start
+// (node takes a few seconds to boot) then never shows a dead page.
+let reconnectTimer = null;
+
 function showFallback() {
   frame.classList.add('hidden');
   fallback.classList.remove('hidden');
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(() => {
+    fetch('http://localhost:3456', { mode: 'no-cors' })
+      .then(() => {
+        clearInterval(reconnectTimer);
+        reconnectTimer = null;
+        frame.src = 'http://localhost:3456'; // reload — first load was aborted
+        frame.classList.remove('hidden');
+        fallback.classList.add('hidden');
+        backfillHistoryIfNeeded();
+      })
+      .catch(() => { /* still down — keep waiting */ });
+  }, 3000);
 }
 
 // ─── 3. PostMessage listener ─────────────────────────────────────────────────

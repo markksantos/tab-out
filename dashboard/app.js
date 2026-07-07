@@ -26,6 +26,28 @@
   localStorage.removeItem('tabout-dark-mode');
 })();
 
+/* ----------------------------------------------------------------
+   HTML ESCAPING
+
+   Tab titles and URLs come from arbitrary web pages — a page can name
+   itself "<img src=x onerror=...>". Every interpolation into innerHTML
+   must go through esc(); every href through safeHref() (which also
+   rejects javascript: URLs).
+   ---------------------------------------------------------------- */
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeHref(url) {
+  const u = String(url || '').trim();
+  return /^(https?|file|chrome-extension|chrome|about):/i.test(u) ? esc(u) : '#';
+}
+
 function getStoredTheme() {
   const t = localStorage.getItem('tabout-theme');
   return t === 'light' || t === 'dark' || t === 'system' ? t : 'system';
@@ -232,7 +254,7 @@ const ICON_RESET = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="1
 const DEFAULT_QUICK_LINKS = [
   { url: 'https://www.google.com', title: 'Google', icon: 'https://www.google.com/favicon.ico' },
   { url: 'https://mail.google.com/chat/', title: 'Google Chat', icon: 'https://www.google.com/s2/favicons?domain=chat.google.com&sz=32' },
-  { url: 'https://web.whatsapp.com', title: 'WhatsApp', icon: 'https://web.whatsapp.com/favicon.ico' },
+  { url: 'https://web.whatsapp.com', title: 'WhatsApp', icon: 'https://icons.duckduckgo.com/ip3/web.whatsapp.com.ico' },
   { url: 'https://www.fiverr.com/seller_dashboard', title: 'Fiverr', icon: 'https://www.fiverr.com/favicon.ico' },
   { url: 'https://docs.google.com/spreadsheets/d/14JdVdf0upNUuH7U3YjANOgfE29zsTCarbCCaPNrkoHc/edit?pli=1&gid=1805970936#gid=1805970936', title: 'Master Sheet', icon: 'https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico' },
   { url: 'https://app.rocketmoney.com/', title: 'Rocket Money', icon: 'https://www.google.com/s2/favicons?domain=rocketmoney.com&sz=32' },
@@ -442,7 +464,7 @@ function renderRecentlyClosed() {
   listEl.innerHTML = list.map((item, i) => {
     const domain = (() => { try { return new URL(item.url).hostname; } catch { return ''; } })();
     return `<div class="archive-item">
-      <a href="${item.url}" target="_top" class="archive-item-title" data-action="reopen-closed-tab" data-index="${i}" title="${item.title}">${item.title || item.url}</a>
+      <a href="${safeHref(item.url)}" target="_top" class="archive-item-title" data-action="reopen-closed-tab" data-index="${i}" title="${esc(item.title)}">${esc(item.title || item.url)}</a>
       <span class="archive-item-date">${timeAgo(item.closedAt)}</span>
     </div>`;
   }).join('');
@@ -471,8 +493,8 @@ function renderQuickLinks() {
   if (!nav) return;
   const links = getQuickLinks();
   nav.innerHTML = links.map((link, i) =>
-    `<a href="${link.url}" class="quick-link" target="_top" title="${link.title}" draggable="true" data-link-index="${i}">
-      <img src="${link.icon}" alt="${link.title}" class="quick-link-icon">
+    `<a href="${safeHref(link.url)}" class="quick-link" target="_top" title="${esc(link.title)}" draggable="true" data-link-index="${i}">
+      <img src="${esc(link.icon)}" alt="${esc(link.title)}" class="quick-link-icon">
     </a>`
   ).join('');
   initQuickLinkDrag();
@@ -1446,13 +1468,13 @@ function openSweepModal() {
     let host = '';
     try { host = new URL(t.url).hostname.replace(/^www\./, ''); } catch { }
     const age = formatStaleAge(t.lastAccessed);
-    const safeTitle = (t.title || t.url || '').replace(/</g, '&lt;');
+    const safeTitle = esc(t.title || t.url || '');
     const favicon = getTabFavicon(t);
     return `<label class="sweep-row" data-sweep-index="${i}">
       <input type="checkbox" checked data-sweep-checkbox>
-      ${favicon ? `<img class="sweep-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
+      ${favicon ? `<img class="sweep-favicon" src="${esc(favicon)}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="sweep-title">${safeTitle}</span>
-      <span class="sweep-host">${host}</span>
+      <span class="sweep-host">${esc(host)}</span>
       <span class="sweep-age">${age}</span>
     </label>`;
   }).join('');
@@ -1634,14 +1656,14 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
     let chipClass = count > 1 ? ' chip-has-dupes' : '';
     if (isStaleTab(tab)) chipClass += ' chip-stale';
-    const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
+    const safeUrl = esc(tab.url || '');
+    const safeTitle = esc(label);
     const faviconUrl = getTabFavicon(tab);
     const ageLabel = formatTabAge(tab);
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
+      ${faviconUrl ? `<img class="chip-favicon" src="${esc(faviconUrl)}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
         <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
@@ -1734,14 +1756,14 @@ function renderDomainCard(group, groupIndex) {
       : '';
     let chipClass = count > 1 ? ' chip-has-dupes' : '';
     if (isStaleTab(tab)) chipClass += ' chip-stale';
-    const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
+    const safeUrl = esc(tab.url || '');
+    const safeTitle = esc(label);
     const faviconUrl = getTabFavicon(tab);
     const ageLabel = formatTabAge(tab);
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
+      ${faviconUrl ? `<img class="chip-favicon" src="${esc(faviconUrl)}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="chip-text">${safeTitle}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
         <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
@@ -2094,11 +2116,11 @@ function renderDeferredItem(item) {
     <div class="deferred-item" data-deferred-id="${item.id}">
       <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
       <div class="deferred-info">
-        <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+        <a href="${safeHref(item.url)}" target="_blank" rel="noopener" class="deferred-title" title="${esc(item.title)}">
+          <img src="${esc(faviconUrl)}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${esc(item.title || item.url)}
         </a>
         <div class="deferred-meta">
-          <span>${domain}</span>
+          <span>${esc(domain)}</span>
           <span>${ago}</span>
         </div>
       </div>
@@ -2121,8 +2143,8 @@ function renderArchiveItem(item) {
 
   return `
     <div class="archive-item">
-      <a href="${item.url}" target="_blank" rel="noopener" class="archive-item-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-        ${item.title || item.url}
+      <a href="${safeHref(item.url)}" target="_blank" rel="noopener" class="archive-item-title" title="${esc(item.title)}">
+        ${esc(item.title || item.url)}
       </a>
       <span class="archive-item-date">${ago}</span>
     </div>`;
@@ -2331,7 +2353,7 @@ async function refreshQuote() {
   }
 
   if (text) {
-    quoteEl.innerHTML = `\u201c${text}\u201d${author ? ` <span class="quote-author">\u2014 ${author}</span>` : ''}`;
+    quoteEl.innerHTML = `\u201c${esc(text)}\u201d${author ? ` <span class="quote-author">\u2014 ${esc(author)}</span>` : ''}`;
     quoteEl.style.display = 'block';
   } else {
     quoteEl.style.display = 'none';
@@ -3220,9 +3242,9 @@ function renderSettingsQuickLinks() {
   }
   container.innerHTML = links.map((link, i) =>
     `<div class="settings-quick-link-item" data-link-index="${i}">
-      <img src="${link.icon || ''}" alt="" class="settings-quick-link-icon" onerror="this.style.display='none'">
-      <span class="settings-quick-link-title">${link.title}</span>
-      <span class="settings-quick-link-url">${link.url}</span>
+      <img src="${esc(link.icon || '')}" alt="" class="settings-quick-link-icon" onerror="this.style.display='none'">
+      <span class="settings-quick-link-title">${esc(link.title)}</span>
+      <span class="settings-quick-link-url">${esc(link.url)}</span>
       <button class="settings-quick-link-remove" data-action="remove-quick-link" data-link-index="${i}" title="Remove">&times;</button>
     </div>`
   ).join('');
@@ -3263,7 +3285,7 @@ function editTabNote(url) {
   let host = '';
   try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { }
   if (tabLine) {
-    tabLine.innerHTML = `<span class="note-tab-host">${host}</span> · <span class="note-tab-title">${(tab?.title || url).replace(/</g, '&lt;')}</span>`;
+    tabLine.innerHTML = `<span class="note-tab-host">${esc(host)}</span> · <span class="note-tab-title">${esc(tab?.title || url)}</span>`;
   }
 
   const existing = tabNotes[url] ? tabNotes[url].note : '';
@@ -3579,12 +3601,12 @@ function initChipContextMenu() {
     const title = chip.querySelector('.chip-text')?.textContent || url;
     const hasNote = !!tabNotes[url];
     menu.innerHTML = `
-      <div class="context-menu-item" data-context-act="save" data-url="${url.replace(/"/g, '&quot;')}" data-title="${title.replace(/"/g, '&quot;')}">Save for later</div>
-      <div class="context-menu-item" data-context-act="snooze" data-url="${url.replace(/"/g, '&quot;')}" data-title="${title.replace(/"/g, '&quot;')}">Snooze…</div>
-      <div class="context-menu-item" data-context-act="note" data-url="${url.replace(/"/g, '&quot;')}">${hasNote ? 'Edit note' : 'Add note'}</div>
-      <div class="context-menu-item" data-context-act="copy" data-url="${url.replace(/"/g, '&quot;')}">Copy URL</div>
+      <div class="context-menu-item" data-context-act="save" data-url="${esc(url)}" data-title="${esc(title)}">Save for later</div>
+      <div class="context-menu-item" data-context-act="snooze" data-url="${esc(url)}" data-title="${esc(title)}">Snooze…</div>
+      <div class="context-menu-item" data-context-act="note" data-url="${esc(url)}">${hasNote ? 'Edit note' : 'Add note'}</div>
+      <div class="context-menu-item" data-context-act="copy" data-url="${esc(url)}">Copy URL</div>
       <div class="context-menu-divider"></div>
-      <div class="context-menu-item context-menu-item-danger" data-context-act="close" data-url="${url.replace(/"/g, '&quot;')}">Close tab</div>
+      <div class="context-menu-item context-menu-item-danger" data-context-act="close" data-url="${esc(url)}">Close tab</div>
     `;
     // Position the menu near the cursor, clamped to viewport
     const x = Math.min(e.clientX, window.innerWidth - 220);
@@ -4014,7 +4036,7 @@ async function openDayDetail(dayKey) {
       </div>
       ${top.length ? `<div class="day-section-title">Most active domains</div>
       <div class="day-domains">
-        ${top.map(([host, n]) => `<div class="day-domain"><span class="day-domain-name">${host}</span><span class="day-domain-count">${n}</span></div>`).join('')}
+        ${top.map(([host, n]) => `<div class="day-domain"><span class="day-domain-name">${esc(host)}</span><span class="day-domain-count">${n}</span></div>`).join('')}
       </div>` : ''}
     `;
   } catch {
@@ -4087,7 +4109,7 @@ function renderWorkspaceTabs() {
   // Make sure currentWorkspace exists in list, otherwise reset
   if (!workspaces.includes(currentWorkspace)) currentWorkspace = workspaces[0];
   tabs.innerHTML = workspaces.map(w => {
-    const safe = (w || '').replace(/"/g, '&quot;');
+    const safe = esc(w || '');
     const cls = w === currentWorkspace ? 'workspace-tab active' : 'workspace-tab';
     const count = savedSessions.filter(s => (s.workspace || 'Default') === w).length;
     return `<button class="${cls}" data-action="workspace-tab" data-workspace="${safe}">${safe} <span class="workspace-count">${count}</span></button>`;
@@ -4113,13 +4135,13 @@ function renderSessions() {
   const filtered = savedSessions.filter(s => (s.workspace || 'Default') === currentWorkspace);
 
   if (filtered.length === 0) {
-    list.innerHTML = `<div class="sessions-empty" style="display:block">Nothing in <strong>${currentWorkspace}</strong> yet.</div>`;
+    list.innerHTML = `<div class="sessions-empty" style="display:block">Nothing in <strong>${esc(currentWorkspace)}</strong> yet.</div>`;
     return;
   }
 
   list.innerHTML = filtered.map(s => {
     const tabCount = (s.tabs || []).length;
-    const safeName = (s.name || '').replace(/"/g, '&quot;');
+    const safeName = esc(s.name || '');
     return `<div class="session-row" data-session-id="${s.id}">
       <div class="session-info">
         <div class="session-name" title="${safeName}">${safeName}</div>
@@ -4174,11 +4196,10 @@ function renderSnoozes() {
     const inLabel = ms <= 0 ? 'now' : msToHumanIn(ms);
     let host = '';
     try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch { }
-    const safeUrl = (s.url || '').replace(/"/g, '&quot;');
     return `<div class="snooze-row">
       <div class="snooze-info">
-        <a class="snooze-title" href="${safeUrl}" target="_top">${(s.title || s.url || '').replace(/</g, '&lt;')}</a>
-        <div class="snooze-meta"><span>${host}</span><span>wakes ${inLabel} (${wakeStr})</span></div>
+        <a class="snooze-title" href="${safeHref(s.url)}" target="_top">${esc(s.title || s.url || '')}</a>
+        <div class="snooze-meta"><span>${esc(host)}</span><span>wakes ${inLabel} (${wakeStr})</span></div>
       </div>
       <div class="snooze-actions">
         <button class="session-btn" data-action="unsnooze-now" data-snooze-id="${s.id}">Wake now</button>
@@ -4218,7 +4239,7 @@ function renderYesterdaySummary() {
     <div class="summary-stat"><div class="summary-stat-num">${yesterdayStat.tabs_closed || 0}</div><div class="summary-stat-label">closed</div></div>
     <div class="summary-stat summary-stat-top">
       <div class="summary-stat-label">Top domains</div>
-      <div class="summary-top-list">${top3.map(([d, n]) => `<span><strong>${d}</strong> ${n}</span>`).join('') || '<span class="muted">—</span>'}</div>
+      <div class="summary-top-list">${top3.map(([d, n]) => `<span><strong>${esc(d)}</strong> ${n}</span>`).join('') || '<span class="muted">—</span>'}</div>
     </div>`;
 }
 
@@ -4247,10 +4268,10 @@ function renderSessionSuggestions() {
   const [host, n] = candidates[0];
   banner.style.display = 'flex';
   banner.innerHTML = `
-    <span class="suggest-text">You have <strong>${n} ${host.replace(/^www\./, '')}</strong> tabs open. Save them as a session?</span>
+    <span class="suggest-text">You have <strong>${n} ${esc(host.replace(/^www\./, ''))}</strong> tabs open. Save them as a session?</span>
     <div class="suggest-actions">
-      <button class="suggest-btn suggest-btn-primary" data-action="suggest-save" data-suggest-host="${host}" data-suggest-count="${n}">Save as session</button>
-      <button class="suggest-btn" data-action="suggest-dismiss" data-suggest-host="${host}">Dismiss</button>
+      <button class="suggest-btn suggest-btn-primary" data-action="suggest-save" data-suggest-host="${esc(host)}" data-suggest-count="${n}">Save as session</button>
+      <button class="suggest-btn" data-action="suggest-dismiss" data-suggest-host="${esc(host)}">Dismiss</button>
     </div>`;
 }
 
@@ -4478,19 +4499,19 @@ function renderPalette() {
     if (entry.kind === 'command') {
       return `<div class="palette-row palette-row-cmd${activeCls}" data-palette-index="${i}">
         <span class="palette-cmd-icon">›</span>
-        <span class="palette-title">${entry.label.replace(/</g, '&lt;')}</span>
+        <span class="palette-title">${esc(entry.label)}</span>
       </div>`;
     }
     const t = entry.tab;
     let host = '';
     try { host = new URL(t.url).hostname.replace(/^www\./, ''); } catch { }
-    const safeUrl = (t.url || '').replace(/"/g, '&quot;');
-    const title = (t.title || t.url || '').replace(/</g, '&lt;');
+    const safeUrl = esc(t.url || '');
+    const title = esc(t.title || t.url || '');
     const favicon = getTabFavicon(t);
     return `<div class="palette-row${activeCls}" data-palette-index="${i}" data-palette-url="${safeUrl}">
-      ${favicon ? `<img class="palette-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
+      ${favicon ? `<img class="palette-favicon" src="${esc(favicon)}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="palette-title">${title}</span>
-      <span class="palette-host">${host}</span>
+      <span class="palette-host">${esc(host)}</span>
     </div>`;
   }).join('');
 
