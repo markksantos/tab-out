@@ -57,7 +57,13 @@ const apiRouter = require('./routes');
 app.use('/api', apiRouter);
 
 // Start the server — loopback only; nothing here belongs on the LAN.
-app.listen(config.port, '127.0.0.1', () => {
-  console.log(`Tab Out running at http://localhost:${config.port}`);
-  startUpdateChecker();
-});
+// Only listen when run directly (node server/index.js); when required by the
+// test suite we export the app and let supertest drive it on an ephemeral port.
+if (require.main === module) {
+  app.listen(config.port, '127.0.0.1', () => {
+    console.log(`Tab Out running at http://localhost:${config.port}`);
+    startUpdateChecker();
+  });
+}
+
+module.exports = app;

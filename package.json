@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Keep tabs on your tabs -- new tab page that groups your open tabs by domain and lets you close them with style",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test tests/*.test.js",
     "start": "node server/index.js",
     "install-service": "node scripts/install.js"
   },

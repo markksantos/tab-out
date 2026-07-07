@@ -11,7 +11,9 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const CONFIG_DIR = path.join(os.homedir(), ".mission-control");
+// TABOUT_CONFIG_DIR lets tests (and alternate installs) point the whole app
+// at an isolated data directory instead of ~/.mission-control.
+const CONFIG_DIR = process.env.TABOUT_CONFIG_DIR || path.join(os.homedir(), ".mission-control");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 const DEFAULTS = {
