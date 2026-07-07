@@ -83,6 +83,22 @@ config.CONFIG_FILE = CONFIG_FILE;
 config.DEFAULTS = DEFAULTS;
 
 config.save = function saveConfig(updates) {
+  // Type-check every update against the DEFAULTS shape so a bad payload
+  // (autoRefreshSeconds: "abc", quickLinks: "x") can't persist to disk and
+  // break the dashboard on next load. Keys not in DEFAULTS (extensionOrigin)
+  // pass through untyped.
+  for (const [key, value] of Object.entries(updates || {})) {
+    const def = DEFAULTS[key];
+    if (def === undefined || value === undefined) continue;
+    if (Array.isArray(def)) {
+      if (!Array.isArray(value)) throw new Error(`${key} must be an array`);
+    } else if (typeof value !== typeof def) {
+      throw new Error(`${key} must be a ${typeof def}`);
+    }
+    if (typeof def === 'number' && !Number.isFinite(value)) {
+      throw new Error(`${key} must be a finite number`);
+    }
+  }
   const merged = Object.assign({}, loadConfig(), updates);
   if (merged.searchEngine && !VALID_SEARCH_ENGINES.includes(merged.searchEngine)) {
     throw new Error(`Invalid searchEngine: ${merged.searchEngine}`);

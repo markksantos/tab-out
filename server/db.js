@@ -206,6 +206,27 @@ try {
   db.exec("ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT 'Default'");
 }
 
+// One active saved-for-later entry per URL. Archive older duplicates that
+// predate this rule, then enforce it with a partial unique index (also the
+// conflict target for insertDeferred's upsert).
+db.exec(`
+  UPDATE deferred_tabs
+  SET    archived = 1,
+         archived_at = datetime('now')
+  WHERE  archived = 0
+    AND  id NOT IN (
+      SELECT MAX(id) FROM deferred_tabs WHERE archived = 0 GROUP BY url
+    );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_deferred_active_url
+    ON deferred_tabs(url) WHERE archived = 0;
+  CREATE INDEX IF NOT EXISTS idx_deferred_archived
+    ON deferred_tabs(archived, deferred_at);
+  CREATE INDEX IF NOT EXISTS idx_snoozed_pending
+    ON snoozed_tabs(woken, wake_at);
+  CREATE INDEX IF NOT EXISTS idx_mission_urls_mission
+    ON mission_urls(mission_id);
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepared statements — query helpers
 //
@@ -374,6 +395,10 @@ const getDeferredArchived = db.prepare(`
 const insertDeferred = db.prepare(`
   INSERT INTO deferred_tabs (url, title, favicon_url, source_mission)
   VALUES (:url, :title, :favicon_url, :source_mission)
+  ON CONFLICT(url) WHERE archived = 0 DO UPDATE SET
+    title       = excluded.title,
+    favicon_url = excluded.favicon_url,
+    deferred_at = datetime('now')
 `);
 
 /**
@@ -492,9 +517,13 @@ const getActiveSnoozes = db.prepare(`
   ORDER BY wake_at ASC
 `);
 
+// wake_at is stored as an ISO string ("2026-07-07T15:00:00.000Z") while
+// datetime('now') renders "2026-07-07 15:00:00" — 'T' sorts after ' ', so a
+// plain string compare against datetime('now') never matches until the UTC
+// date rolls over. Compare against the same ISO shape instead.
 const getDueSnoozes = db.prepare(`
   SELECT * FROM snoozed_tabs
-  WHERE  woken = 0 AND wake_at <= datetime('now')
+  WHERE  woken = 0 AND wake_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 `);
 
 const markSnoozeWoken = db.prepare(`

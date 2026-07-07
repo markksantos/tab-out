@@ -29,6 +29,7 @@ const {
   dismissMission,
   archiveMission,
   getMeta,
+  setMeta,
   db,
   getDeferredActive,
   getDeferredArchived,
@@ -738,19 +739,36 @@ function safeParseTabs(urlsJson) {
 //
 // Response: { text, author } or { error } on failure.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/quote', async (req, res) => {
+const QUOTE_CACHE_KEY = 'cached_quote';
+const QUOTE_FRESH_MS = 6 * 60 * 60 * 1000; // serve cached quote up to 6h without refetching
+
+function readCachedQuote() {
   try {
-    const resp = await fetch('https://zenquotes.io/api/random');
+    const row = getMeta.get({ key: QUOTE_CACHE_KEY });
+    return row ? JSON.parse(row.value) : null;
+  } catch { return null; }
+}
+
+router.get('/quote', async (req, res) => {
+  const cached = readCachedQuote();
+  if (cached && Date.now() - cached.fetchedAt < QUOTE_FRESH_MS) {
+    return res.json({ text: cached.text, author: cached.author });
+  }
+  try {
+    const resp = await fetch('https://zenquotes.io/api/random', {
+      signal: AbortSignal.timeout(5000),
+    });
     const json = await resp.json();
     if (Array.isArray(json) && json.length > 0) {
-      res.json({ text: json[0].q, author: json[0].a });
-    } else {
-      res.status(502).json({ error: 'Unexpected ZenQuotes response' });
+      const quote = { text: json[0].q, author: json[0].a, fetchedAt: Date.now() };
+      setMeta.run({ key: QUOTE_CACHE_KEY, value: JSON.stringify(quote) });
+      return res.json({ text: quote.text, author: quote.author });
     }
   } catch (err) {
-    console.error('[routes] GET /quote proxy failed:', err.message);
-    res.status(502).json({ error: 'Failed to fetch quote' });
+    // fall through to stale cache
   }
+  if (cached) return res.json({ text: cached.text, author: cached.author });
+  res.status(502).json({ error: 'Failed to fetch quote' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
