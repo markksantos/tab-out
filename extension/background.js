@@ -1,81 +1,53 @@
 /**
  * background.js — Service Worker for Badge Updates
  *
- * This is Chrome's "always-on" background script for the extension. Unlike a
- * normal webpage script, it keeps running even when no tabs are open.
- *
- * Its only job is to keep the toolbar badge up to date with the current
- * mission count from the dashboard server. The badge is the little number/text
- * that appears on the extension icon in the Chrome toolbar.
- *
- * Color coding gives the user a quick at-a-glance health signal:
- *   Green  (#3d7a4a) → 1–3 missions  (focused, manageable)
- *   Amber  (#b8892e) → 4–6 missions  (getting busy)
- *   Red    (#b35a5a) → 7+ missions   (overloaded — time to cull!)
+ * Keeps the toolbar badge showing the current OPEN TAB COUNT, straight from
+ * chrome.tabs — no server round-trip, so it works even when the dashboard
+ * server is down. Color coding gives an at-a-glance workload signal:
+ *   Green  (#3d7a4a) → under 25 tabs  (in control)
+ *   Amber  (#b8892e) → 25–49 tabs     (piling up)
+ *   Red    (#b35a5a) → 50+ tabs       (time to sweep)
  */
 
 // ─── Badge updater ────────────────────────────────────────────────────────────
 
-/**
- * updateBadge — Fetches mission stats from the local server and updates the
- * Chrome toolbar badge to reflect the current total mission count.
- */
 async function updateBadge() {
   try {
-    const res  = await fetch('http://localhost:3456/api/stats');
-    const data = await res.json();
+    const tabs = await chrome.tabs.query({});
+    const count = tabs.length;
 
-    const count = data.totalMissions ?? 0;
-
-    // Don't show "0" — an empty badge is cleaner when there's nothing to do
-    if (count === 0) {
-      chrome.action.setBadgeText({ text: '' });
-      return;
-    }
-
-    // Set the text (Chrome badge supports short strings; a number works great)
     chrome.action.setBadgeText({ text: String(count) });
 
-    // Pick a color based on workload level
     let badgeColor;
-    if (count <= 3) {
+    if (count < 25) {
       badgeColor = '#3d7a4a'; // Green — you're in control
-    } else if (count <= 6) {
+    } else if (count < 50) {
       badgeColor = '#b8892e'; // Amber — things are piling up
     } else {
       badgeColor = '#b35a5a'; // Red — time to focus and close some tabs
     }
 
     chrome.action.setBadgeBackgroundColor({ color: badgeColor });
-
   } catch {
-    // If the server isn't running, clear the badge rather than show stale data
     chrome.action.setBadgeText({ text: '' });
   }
 }
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
 
-// Update the badge immediately when the extension is first installed.
-// History backfill is owned by the new-tab page (newtab.js) so it doesn't
-// depend on the service worker being awake at the right moment.
 chrome.runtime.onInstalled.addListener(() => {
   updateBadge();
 });
 
-// Update the badge when Chrome starts up (e.g. after a reboot)
 chrome.runtime.onStartup.addListener(() => {
   updateBadge();
 });
 
-// Update the badge whenever a new tab is opened — the user might be adding
-// work that should bump the mission count
 chrome.tabs.onCreated.addListener((tab) => {
   updateBadge();
   recordTabEvent('open', tab && tab.url);
 });
 
-// Update the badge whenever a tab is closed — a mission may have been completed
 chrome.tabs.onRemoved.addListener(() => {
   updateBadge();
   recordTabEvent('close', null);
@@ -103,15 +75,16 @@ async function recordTabEvent(type, url) {
 // access too and runs reliably on every dashboard open, so we don't need to
 // duplicate it here in the service worker.
 
-// ─── Snooze waker ──────────────────────────────────────────────────────────
-// Poll the server every minute for snoozed tabs whose wake_at is past, then
-// open them as background tabs and mark them woken. Uses chrome.alarms so it
-// keeps firing even when the service worker has been put to sleep.
+// ─── Periodic tick ─────────────────────────────────────────────────────────
+// One chrome.alarms tick per minute drives both the snooze waker and a badge
+// refresh. MV3 service workers are put to sleep, which silently kills
+// setInterval — alarms keep firing regardless.
 
-chrome.alarms.create('tabout-snooze-check', { periodInMinutes: 1 });
+chrome.alarms.create('tabout-tick', { periodInMinutes: 1 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== 'tabout-snooze-check') return;
+  if (alarm.name !== 'tabout-tick' && alarm.name !== 'tabout-snooze-check') return;
+  updateBadge();
   await wakeDueSnoozes();
 });
 
@@ -136,11 +109,5 @@ async function wakeDueSnoozes() {
   } catch { /* server may be down */ }
 }
 
-// ─── Polling ─────────────────────────────────────────────────────────────────
-
-// Refresh the badge every 60 seconds in case missions are added/edited via
-// the dashboard without any tab events firing (e.g. editing inside the app)
-setInterval(updateBadge, 60 * 1000);
-
-// Also run once immediately when the service worker first loads
+// Run once when the service worker (re)starts
 updateBadge();

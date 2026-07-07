@@ -5,7 +5,6 @@
   "description": "Keep tabs on your tabs. New tab page that groups your open tabs by domain and lets you close them with style.",
   "permissions": [
     "tabs",
-    "activeTab",
     "alarms",
     "history",
     "storage"

@@ -60,57 +60,6 @@ db.pragma('journal_mode = WAL');
 // ─────────────────────────────────────────────────────────────────────────────
 db.exec(`
   -- ──────────────────────────────────────────────────────────────────────────
-  -- missions table
-  -- The core table. Each row is one "mission" (a group of related browser
-  -- tabs). Status can be:
-  --   'active'    — currently being worked on
-  --   'cooling'   — not visited recently but not abandoned
-  --   'abandoned' — user hasn't touched it in a long time
-  -- dismissed = 1 means the user has hidden this mission from the dashboard.
-  -- ──────────────────────────────────────────────────────────────────────────
-  CREATE TABLE IF NOT EXISTS missions (
-    id            TEXT    PRIMARY KEY,
-    name          TEXT    NOT NULL,
-    summary       TEXT,
-    status        TEXT    NOT NULL CHECK(status IN ('active', 'cooling', 'abandoned')),
-    last_activity TEXT,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-    dismissed     INTEGER NOT NULL DEFAULT 0
-  );
-
-  -- ──────────────────────────────────────────────────────────────────────────
-  -- mission_urls table
-  -- Each mission can have many URLs (tabs). This is a "one-to-many"
-  -- relationship: one mission → many URLs.
-  -- visit_count tracks how many times you've visited that URL within the
-  -- mission's time window.
-  -- ──────────────────────────────────────────────────────────────────────────
-  CREATE TABLE IF NOT EXISTS mission_urls (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    mission_id  TEXT    NOT NULL REFERENCES missions(id),
-    url         TEXT    NOT NULL,
-    title       TEXT,
-    visit_count INTEGER NOT NULL DEFAULT 1,
-    last_visit  TEXT
-  );
-
-  -- ──────────────────────────────────────────────────────────────────────────
-  -- archives table
-  -- When a mission is dismissed/archived, we store a snapshot of it here so
-  -- you can look back at what you were working on. The URLs are stored as a
-  -- JSON string (urls_json) since we don't need to query individual archived
-  -- URLs — we just want to show the whole list.
-  -- ──────────────────────────────────────────────────────────────────────────
-  CREATE TABLE IF NOT EXISTS archives (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    mission_id   TEXT    NOT NULL,
-    mission_name TEXT    NOT NULL,
-    urls_json    TEXT    NOT NULL,
-    archived_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-
-  -- ──────────────────────────────────────────────────────────────────────────
   -- meta table
   -- A simple key-value store for app-wide settings and state.
   -- For example: { key: 'last_sync', value: '2024-01-15T10:30:00' }
@@ -223,8 +172,6 @@ db.exec(`
     ON deferred_tabs(archived, deferred_at);
   CREATE INDEX IF NOT EXISTS idx_snoozed_pending
     ON snoozed_tabs(woken, wake_at);
-  CREATE INDEX IF NOT EXISTS idx_mission_urls_mission
-    ON mission_urls(mission_id);
 `);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,102 +188,7 @@ db.exec(`
 
 // ── READ QUERIES ─────────────────────────────────────────────────────────────
 
-/**
- * getMissions
- * Returns all missions that haven't been dismissed by the user.
- * Ordered by:
- *   1. Status priority: active first, then cooling, then abandoned
- *      (CASE WHEN is SQL's version of an if/else for sorting)
- *   2. Then by last_activity DESC (most recently active at the top)
- */
-const getMissions = db.prepare(`
-  SELECT *
-  FROM   missions
-  WHERE  dismissed = 0
-  ORDER BY
-    CASE status
-      WHEN 'active'    THEN 1
-      WHEN 'cooling'   THEN 2
-      WHEN 'abandoned' THEN 3
-      ELSE                  4
-    END ASC,
-    last_activity DESC
-`);
-
-/**
- * getMissionUrls
- * Returns all URLs belonging to a specific mission, ordered by most visited.
- * Uses a named parameter (:id) which we pass as { id: '...' } when calling.
- */
-const getMissionUrls = db.prepare(`
-  SELECT *
-  FROM   mission_urls
-  WHERE  mission_id = :id
-  ORDER BY visit_count DESC, last_visit DESC
-`);
-
 // ── WRITE QUERIES ─────────────────────────────────────────────────────────────
-
-/**
- * upsertMission
- * INSERT OR REPLACE won't work well here because it deletes then re-inserts
- * (losing the created_at date). Instead we use INSERT ... ON CONFLICT which
- * is a proper "upsert" — insert if new, update specific fields if it exists.
- *
- * The "DO UPDATE SET" part runs only when a row with that id already exists.
- * "excluded." refers to the values we tried to insert (i.e. the new values).
- */
-const upsertMission = db.prepare(`
-  INSERT INTO missions (id, name, summary, status, last_activity, created_at, updated_at, dismissed)
-  VALUES (:id, :name, :summary, :status, :last_activity, :created_at, :updated_at, :dismissed)
-  ON CONFLICT(id) DO UPDATE SET
-    name          = excluded.name,
-    summary       = excluded.summary,
-    status        = excluded.status,
-    last_activity = excluded.last_activity,
-    updated_at    = excluded.updated_at
-`);
-
-/**
- * insertMissionUrl
- * Adds a single URL record linked to a mission.
- */
-const insertMissionUrl = db.prepare(`
-  INSERT INTO mission_urls (mission_id, url, title, visit_count, last_visit)
-  VALUES (:mission_id, :url, :title, :visit_count, :last_visit)
-`);
-
-/**
- * deleteMissionUrls
- * Deletes ALL URL rows for a given mission. Used before re-inserting fresh
- * URLs from a new sync pass (so we don't accumulate duplicates).
- */
-const deleteMissionUrls = db.prepare(`
-  DELETE FROM mission_urls
-  WHERE mission_id = :id
-`);
-
-/**
- * dismissMission
- * Soft-deletes a mission by setting dismissed = 1 instead of actually
- * removing it. This lets us keep history and avoid accidents.
- */
-const dismissMission = db.prepare(`
-  UPDATE missions
-  SET    dismissed = 1,
-         updated_at = datetime('now')
-  WHERE  id = :id
-`);
-
-/**
- * archiveMission
- * Saves a snapshot of a mission into the archives table.
- * urls_json should be a JSON.stringify()'d array of URL objects.
- */
-const archiveMission = db.prepare(`
-  INSERT INTO archives (mission_id, mission_name, urls_json, archived_at)
-  VALUES (:mission_id, :mission_name, :urls_json, :archived_at)
-`);
 
 // ── META KEY-VALUE HELPERS ────────────────────────────────────────────────────
 
@@ -572,39 +424,6 @@ const replaceDailyStat = db.prepare(`
 `);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// clearAllMissions — function helper
-//
-// This is a function (not just a prepared statement) because it needs to run
-// TWO deletes atomically inside a transaction. A transaction means both
-// deletes succeed together or neither does — prevents partial data corruption.
-//
-// We delete mission_urls first because of the foreign key reference:
-//   mission_urls.mission_id → missions.id
-// If we deleted missions first, there would be orphaned URL rows pointing
-// to non-existent mission ids.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Pre-prepare the two statements used inside clearAllMissions
-const _deleteAllUrls     = db.prepare('DELETE FROM mission_urls');
-const _deleteAllMissions = db.prepare('DELETE FROM missions');
-
-/**
- * clearAllMissions()
- * Wipes all missions and their URLs. Used for a full reset / re-sync.
- * Wrapped in a transaction so it's all-or-nothing.
- */
-function clearAllMissions() {
-  // db.transaction() returns a function. Calling that function runs everything
-  // inside as one atomic transaction — like a "save point" that rolls back
-  // if anything goes wrong.
-  const runClear = db.transaction(() => {
-    _deleteAllUrls.run();
-    _deleteAllMissions.run();
-  });
-  runClear();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 //
 // We export the raw db instance (for advanced queries if needed) plus all the
@@ -613,16 +432,8 @@ function clearAllMissions() {
 // ─────────────────────────────────────────────────────────────────────────────
 module.exports = {
   db,               // Raw better-sqlite3 Database instance
-  getMissions,      // () → array of non-dismissed mission rows
-  getMissionUrls,   // ({ id }) → array of URL rows for a mission
-  upsertMission,    // ({ id, name, summary, status, last_activity, created_at, updated_at, dismissed })
-  insertMissionUrl, // ({ mission_id, url, title, visit_count, last_visit })
-  deleteMissionUrls,// ({ id }) → deletes all URLs for a mission
-  dismissMission,   // ({ id }) → soft-deletes a mission
-  archiveMission,   // ({ mission_id, mission_name, urls_json, archived_at })
   getMeta,          // ({ key }) → { value } or undefined
   setMeta,          // ({ key, value })
-  clearAllMissions, // () → wipes all missions + urls atomically
   getDeferredActive,    // () → array of active (non-archived) deferred tabs
   getDeferredArchived,  // () → array of archived deferred tabs
   insertDeferred,       // ({ url, title, favicon_url, source_mission })

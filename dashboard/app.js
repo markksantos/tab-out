@@ -977,51 +977,6 @@ function getDateDisplay() {
   });
 }
 
-/**
- * countOpenTabsForMission(missionUrls)
- *
- * Counts how many of the user's currently open browser tabs
- * match any of the URLs associated with a mission.
- *
- * We match by domain (hostname) rather than exact URL, because
- * the exact URL often changes (e.g. page IDs, session tokens).
- */
-function countOpenTabsForMission(missionUrls) {
-  return getOpenTabsForMission(missionUrls).length;
-}
-
-/**
- * getOpenTabsForMission(missionUrls)
- *
- * Returns the actual tab objects from openTabs that match
- * any URL in the mission's URL list (matched by domain).
- */
-function getOpenTabsForMission(missionUrls) {
-  if (!missionUrls || missionUrls.length === 0 || openTabs.length === 0) return [];
-
-  // Extract the domains from the mission's saved URLs
-  // missionUrls can be either URL strings or objects with a .url property
-  const missionDomains = missionUrls.map(item => {
-    const urlStr = (typeof item === 'string') ? item : (item.url || '');
-    try {
-      return new URL(urlStr.startsWith('http') ? urlStr : 'https://' + urlStr).hostname;
-    } catch {
-      return urlStr;
-    }
-  });
-
-  // Find open tabs whose hostname matches any mission domain
-  return openTabs.filter(tab => {
-    try {
-      const tabDomain = new URL(tab.url).hostname;
-      return missionDomains.some(d => tabDomain.includes(d) || d.includes(tabDomain));
-    } catch {
-      return false;
-    }
-  });
-}
-
-
 /* ----------------------------------------------------------------
    SVG ICON STRINGS
 
@@ -2979,73 +2934,6 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
-  // ---- archive: close tabs + mark mission as archived, then remove card ----
-  else if (action === 'archive') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    const urls = (mission.urls || []).map(u => u.url);
-    await closeTabsByUrls(urls);
-
-    // Tell the server to archive this mission
-    try {
-      await fetch(`/api/missions/${missionId}/archive`, { method: 'POST' });
-    } catch (err) {
-      console.warn('[tab-out] Could not archive mission:', err);
-    }
-
-    // Animate the card out
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-
-    showToast(`Archived "${mission.name}"`);
-
-  }
-
-  // ---- dismiss: close tabs (if any), mark as dismissed, remove card ----
-  else if (action === 'dismiss') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    // If tabs are open, close them first
-    const tabCount = card
-      ? (card.querySelector('.open-tabs-badge')?.textContent.match(/\d+/)?.[0] || 0)
-      : 0;
-
-    if (parseInt(tabCount) > 0) {
-      const urls = (mission.urls || []).map(u => u.url);
-      await closeTabsByUrls(urls);
-    }
-
-    // Tell the server this mission is dismissed
-    try {
-      await fetch(`/api/missions/${missionId}/dismiss`, { method: 'POST' });
-    } catch (err) {
-      console.warn('[tab-out] Could not dismiss mission:', err);
-    }
-
-    // Animate the card out
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-
-    showToast(`Let go of "${mission.name}"`);
-
-  }
-
-  // ---- focus: bring the mission's tabs to the front ----
-  else if (action === 'focus') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    const urls = (mission.urls || []).map(u => u.url);
-    await focusTabsByUrls(urls);
-    showToast(`Focused on "${mission.name}"`);
-  }
-
   // ---- close-uncat: close uncategorized tabs by domain ----
   else if (action === 'close-uncat') {
     const domain = actionEl.dataset.domain;
@@ -3129,23 +3017,6 @@ document.addEventListener('input', async (e) => {
    ACTION HELPERS
    ---------------------------------------------------------------- */
 
-/**
- * fetchMissionById(missionId)
- *
- * Fetches a single mission object by ID from the server.
- * Returns null if the fetch fails.
- */
-async function fetchMissionById(missionId) {
-  try {
-    const res = await fetch('/api/missions');
-    if (!res.ok) return null;
-    const missions = await res.json();
-    return missions.find(m => String(m.id) === String(missionId)) || null;
-  } catch {
-    return null;
-  }
-}
-
 /* ----------------------------------------------------------------
    UPDATE NOTIFICATION (read-only, no code execution)
    ---------------------------------------------------------------- */
@@ -3161,7 +3032,7 @@ async function checkForUpdates() {
     if (!dashboardColumns) return;
     const notice = document.createElement('div');
     notice.style.cssText = 'text-align:center; padding:8px; font-size:12px; color:var(--muted); margin-top:24px;';
-    notice.innerHTML = 'A new version of Tab Out is available. Run <code style="background:var(--warm-gray);padding:2px 6px;border-radius:3px;font-size:11px;user-select:all;cursor:pointer;" title="Click to select">git pull https://github.com/zarazhangrui/tab-out</code> to update.';
+    notice.innerHTML = 'A new version of Tab Out is available. Run <code style="background:var(--warm-gray);padding:2px 6px;border-radius:3px;font-size:11px;user-select:all;cursor:pointer;" title="Click to select">git pull</code> in the tab-out folder to update.';
     dashboardColumns.after(notice);
   } catch { }
 }
@@ -4704,7 +4575,7 @@ function initCommandPalette() {
    INITIALIZE
    ---------------------------------------------------------------- */
 renderDashboard();
-// checkForUpdates();
+checkForUpdates();
 
 /* ----------------------------------------------------------------
    HISTORY BACKFILL HOOK — listen for the new-tab page telling us
